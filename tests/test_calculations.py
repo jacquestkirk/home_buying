@@ -1,12 +1,12 @@
 import math
 
 import calculations
-from zillow_scraper import ZillowData
+from house_scraper import HouseData
 
 
 def test_zillow_total_cost():
     # https://www.zillow.com/homedetails/700-Nightshade-Way-Raleigh-NC-27610/65344676_zpid/
-    example_zillow_data = ZillowData(
+    example_zillow_data = HouseData(
         price=280000,
         property_tax=203,
         home_insurance=98,

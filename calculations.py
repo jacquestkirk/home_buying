@@ -1,6 +1,9 @@
 import copy
+import pandas as pd
+import numpy as np
 import constants
-import zillow_scraper
+import house_scraper
+
 
 class MonthData:
     def __init__(
@@ -49,7 +52,7 @@ def calculate_upfront_cost(
 class HouseCalculator:
     def __init__(
         self,
-        zillow_data: zillow_scraper.ZillowData,
+        zillow_data: house_scraper.HouseData,
         mortgage_data: constants.MortgageData = constants.mortgages['lee_anne_20_pct'],
         repair_fund_multiplier=constants.repair_fund_multiplier,
         property_manager_pct=constants.property_manager_pct,
@@ -66,12 +69,18 @@ class HouseCalculator:
         self.closing_cost_pct = closing_cost_pct
         self.time_series = self.calculate_time_series()
 
+    def calculate_monthly_payments(self):
+        return calculate_monthly_payments(self.zillow_data, self.mortgage_data)
+
     def calculate_cash_flow(self):
         return calculate_cash_flow(self.zillow_data, self.mortgage_data, self.vacancy_rate_pct)
 
     def calculate_no_mortgage_cash_flow(self):
         mortgage_data = constants.mortgages['all_cash']
         return calculate_cash_flow(self.zillow_data, mortgage_data, self.vacancy_rate_pct)
+
+    def calculate_no_mortgage_yield(self):
+        #Todo: this
 
     def find_rent_change_to_zero_cash_flow(self):
         step_size = 10  # dollars
@@ -85,7 +94,7 @@ class HouseCalculator:
         return zillow_data_copy.rent_zestimate
 
     def find_rent_change_to_zero_cash_flow_pct(self):
-        return (self.find_rent_change_to_zero_cash_flow() - self.zillow_data.rent_zestimate) / self.zillow_data.rent_zestimate
+        return (self.find_rent_change_to_zero_cash_flow() - self.zillow_data.rent_zestimate) / self.zillow_data.rent_zestimate * 100
 
     def calculate_depreciation_tax_deduction(self):
         # https://www.millionacres.com/taxes/real-estate-tax-deductions/a-beginners-guide-to-investment-property-income-tax-deductions/
@@ -130,9 +139,21 @@ class HouseCalculator:
             time_series.append(new_month)
         return time_series
 
+    def calculate_initial_non_principle_cash_flow(self):
+        monthly_profit = pd.DataFrame([vars(x) for x in self.calculate_time_series()])['monthly_profit']
+        return monthly_profit[1]
+
+    def calculate_time_to_zero_non_principle_cash_flow(self):
+        monthly_profit = pd.DataFrame([vars(x) for x in self.calculate_time_series()])['monthly_profit']
+        return np.argmax(monthly_profit.values > 0)/12  # years
+
+    def calculate_time_to_break_even(self):
+        cum_profit = pd.DataFrame([vars(x) for x in self.calculate_time_series()])['cumulative_profit']
+        return np.argmax(cum_profit.values > 0)/12
+
 
 def calculate_best_case_non_mortgage_costs(
-    zillow_data: zillow_scraper.ZillowData,
+    zillow_data: house_scraper.HouseData,
     repair_fund_multiplier=constants.repair_fund_multiplier,
     property_manager_pct=constants.property_manager_pct
 ):
@@ -145,15 +166,15 @@ def calculate_best_case_non_mortgage_costs(
 
 
 def calculate_non_mortgage_costs(
-    zillow_data: zillow_scraper.ZillowData,
+    zillow_data: house_scraper.HouseData,
     repair_fund_multiplier=constants.repair_fund_multiplier,
     property_manager_pct=constants.property_manager_pct,
     lease_finding_fees=constants.lease_finding_fees_pct,
 ):
     return (
         zillow_data.hoa +
-        zillow_data.property_tax +
-        zillow_data.home_insurance +
+        zillow_data.property_tax * zillow_data.price / 12 / 100 +
+        zillow_data.home_insurance * zillow_data.price / 12 / 100 +
         zillow_data.rent_zestimate * repair_fund_multiplier / 12 +
         zillow_data.rent_zestimate * property_manager_pct / 100 +
         zillow_data.rent_zestimate * lease_finding_fees / 100
@@ -161,14 +182,14 @@ def calculate_non_mortgage_costs(
 
 
 def calculate_adjusted_rental_income(
-    zillow_data: zillow_scraper.ZillowData,
+    zillow_data: house_scraper.HouseData,
     vacancy_rate_pct=constants.vacancy_rate_pct
 ):
     return zillow_data.rent_zestimate * (1 - vacancy_rate_pct / 100)
 
 
 def calculate_monthly_payments(
-    zillow_data: zillow_scraper.ZillowData,
+    zillow_data: house_scraper.HouseData,
     mortgage_data: constants.MortgageData = constants.mortgages['lee_anne_20_pct']
 ):
     mortgage = calculate_mortgage(
@@ -184,7 +205,7 @@ def calculate_monthly_payments(
 
 
 def calculate_cash_flow(
-    zillow_data: zillow_scraper.ZillowData,
+    zillow_data: house_scraper.HouseData,
     mortgage_data: constants.MortgageData = constants.mortgages['lee_anne_20_pct'],
     vacancy_rate_pct=constants.vacancy_rate_pct
 ):
